@@ -7,10 +7,8 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 });
 
-// Compatibility layer: the existing single-file app uses window.storage.
-// This keeps its UI/business logic intact while persisting collections in Supabase.
 const tables = {
-  "khp:users": ["users", (r) => ({ ...r, passwordHash: r.password_hash, createdAt: r.created_at }), (r) => ({ id:r.id, username:r.username, name:r.name, role:r.role, password_hash:r.passwordHash, active:r.active, created_at:r.createdAt })],
+  "khp:users": ["users", (r) => ({ ...r, passwordHash: r.password_hash, createdAt: r.created_at, authUserId: r.auth_user_id }), (r) => ({ id:r.id, username:r.username, name:r.name, role:r.role, password_hash:r.passwordHash ?? null, active:r.active, created_at:r.createdAt, email:r.email ?? null, auth_user_id:r.authUserId ?? null })],
   "khp:patients": ["patients", (r) => ({ ...r, patientId:r.patient_id, emergencyContact:r.emergency_contact, registeredAt:r.registered_at, registeredBy:r.registered_by }), (r) => ({ id:r.id, patient_id:r.patientId, name:r.name, dob:r.dob, sex:r.sex, phone:r.phone, address:r.address, emergency_contact:r.emergencyContact, notes:r.notes, registered_at:r.registeredAt, registered_by:r.registeredBy, archived:r.archived })],
   "khp:services": ["services", (r) => ({ ...r }), (r) => ({ id:r.id, name:r.name, description:r.description, price:r.price, active:r.active })],
   "khp:visits": ["visits", (r) => ({ ...r, visitId:r.visit_id, patientId:r.patient_id, serviceId:r.service_id, staffId:r.staff_id, paymentMethod:r.payment_method }), (r) => ({ id:r.id, visit_id:r.visitId, patient_id:r.patientId, date:r.date, reason:r.reason, service_id:r.serviceId, staff_id:r.staffId, amount:r.amount, payment_method:r.paymentMethod, status:r.status, notes:r.notes })],
@@ -41,7 +39,6 @@ async function writeCollection(key, value) {
     if (error) throw error;
   }
 
-  // Remove records that the current app state no longer contains.
   if (!rows.length) {
     const { error } = await supabase.from(table).delete().neq("id", "");
     if (error) throw error;
@@ -59,14 +56,30 @@ async function writeCollection(key, value) {
 
 window.storage = {
   async get(key) {
+    if (key === "khp:lang") {
+      const value = localStorage.getItem("khp:lang");
+      return value == null ? null : { value };
+    }
+    if (key === "khp:session") {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.user?.id ? { value: data.session.user.id } : null;
+    }
     const value = await readCollection(key, null);
     return value === null ? null : { value: JSON.stringify(value) };
   },
   async set(key, serialized) {
+    if (key === "khp:lang") {
+      localStorage.setItem("khp:lang", String(serialized));
+      return { ok: true };
+    }
+    if (key === "khp:session") {
+      if (!serialized) await supabase.auth.signOut();
+      return { ok: true };
+    }
     const value = typeof serialized === "string" ? JSON.parse(serialized) : serialized;
     await writeCollection(key, value);
     return { ok: true };
   },
 };
 
-console.info("Karuruma Health Post: Supabase storage enabled");
+console.info("Karuruma Health Post: authenticated Supabase storage enabled");
