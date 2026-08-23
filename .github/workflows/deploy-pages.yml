@@ -2,7 +2,7 @@ name: Deploy Health Post to GitHub Pages
 
 on:
   push:
-    branches: [live-app-setup]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
