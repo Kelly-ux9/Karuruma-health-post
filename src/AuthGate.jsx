@@ -20,8 +20,8 @@ export default function AuthGate() {
   async function refresh() {
     const { data } = await supabase.auth.getSession();
     setSession(data.session || null);
-    const { count } = await supabase.from("users").select("id", { count: "exact", head: true });
-    setHasUsers((count || 0) > 0);
+    const { data: available, error: availabilityError } = await supabase.rpc("khp_bootstrap_available");
+    setHasUsers(availabilityError ? true : !available);
     setChecking(false);
   }
 
@@ -51,8 +51,8 @@ export default function AuthGate() {
     e?.preventDefault();
     setLoading(true); setError(""); setMessage("");
     try {
-      const { count } = await supabase.from("users").select("id", { count: "exact", head: true });
-      if ((count || 0) > 0) throw new Error("Administrator setup has already been completed.");
+      const { data: available, error: availabilityError } = await supabase.rpc("khp_bootstrap_available");
+      if (availabilityError || !available) throw new Error("Administrator setup has already been completed.");
       if (!username.trim() || !name.trim() || !email.trim() || password.length < 8) {
         throw new Error("Enter a name, username, valid email, and a password of at least 8 characters.");
       }
