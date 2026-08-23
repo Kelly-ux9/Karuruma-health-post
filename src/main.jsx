@@ -1,11 +1,11 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import App from "../karuruma-health-post.jsx";
+import AuthGate from "./AuthGate.jsx";
 import "./styles.css";
 import "./supabase.js";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <AuthGate />
   </React.StrictMode>
 );
