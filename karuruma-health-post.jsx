@@ -131,11 +131,46 @@ function nowISO() { return new Date().toISOString(); }
 function money(n) { return new Intl.NumberFormat("en-RW").format(Number(n||0)); }
 function dateLabel(d) { try { return new Date(d).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"}); } catch { return d; } }
 
+const SUPABASE_TABLES = {
+  khp_patients: "patients", khp_visits: "visits", khp_transactions: "transactions",
+  khp_services: "services", khp_closings: "closings", khp_users: "users", khp_audit: "audit_logs"
+};
+const SUPABASE_COLUMNS = {
+  patients: ["id","patient_id","name","dob","sex","phone","address","emergency_contact","notes","registered_at","registered_by","archived"],
+  visits: ["id","visit_id","patient_id","date","reason","service_id","staff_id","amount","payment_method","status","notes"],
+  transactions: ["id","txn_id","date","time","patient_id","visit_id","service_id","amount","method","staff_id","description","status"],
+  services: ["id","name","description","price","active"],
+  closings: ["id","date","closed_by","closed_at","patients_count","visits_count","txn_count","cash_total","momo_total","total_revenue"],
+  users: ["id","username","name","role","password_hash","active","created_at","email","auth_user_id"],
+  audit_logs: ["id","user_id","username","action","target","description","timestamp"]
+};
+function toSnake(k) { return k.replace(/[A-Z]/g, m => "_" + m.toLowerCase()); }
+function fromSnake(k) { return k.replace(/_([a-z])/g, (_,c) => c.toUpperCase()); }
 async function getColl(key, fallback=[]) {
-  try { const raw = await window.storage?.get(key, true); return raw?.value ? JSON.parse(raw.value) : fallback; } catch { return fallback; }
+  const table = SUPABASE_TABLES[key];
+  if (!table || !supabase) return fallback;
+  try {
+    const { data, error } = await supabase.from(table).select("*").order("id", { ascending: true });
+    if (error) throw error;
+    return (data || []).map(row => Object.fromEntries(Object.entries(row).map(([k,v]) => [fromSnake(k), v])));
+  } catch (e) { console.error("Supabase read failed", table, e); return fallback; }
 }
 async function setColl(key, value) {
-  try { await window.storage?.set(key, JSON.stringify(value), true); return true; } catch { return false; }
+  const table = SUPABASE_TABLES[key];
+  if (!table || !supabase) return false;
+  try {
+    const rows = (Array.isArray(value) ? value : []).map(item => {
+      const allowed = SUPABASE_COLUMNS[table] || [];
+      return Object.fromEntries(Object.entries(item).map(([k,v]) => [toSnake(k), v]).filter(([k]) => allowed.includes(k)));
+    });
+    const ids = rows.map(r => r.id).filter(Boolean);
+    const existing = await supabase.from(table).select("id");
+    if (existing.error) throw existing.error;
+    const stale = (existing.data || []).map(r => r.id).filter(id => !ids.includes(id));
+    if (stale.length) { const { error } = await supabase.from(table).delete().in("id", stale); if (error) throw error; }
+    if (rows.length) { const { error } = await supabase.from(table).upsert(rows, { onConflict: "id" }); if (error) throw error; }
+    return true;
+  } catch (e) { console.error("Supabase write failed", table, e); return false; }
 }
 
 async function seedData() {
