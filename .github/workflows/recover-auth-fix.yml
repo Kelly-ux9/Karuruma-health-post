@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   recover-and-deploy:
-    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Trigger deployment with Supabase-only authentication fix'
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Add recovery workflow for authentication deployment'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
