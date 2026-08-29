@@ -1,0 +1,30 @@
+name: Wire patient location selector
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch AuthGate
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('src/AuthGate.jsx')
+          s=p.read_text()
+          if 'LocationBridge' not in s:
+              s=s.replace('import App from "../karuruma-health-post.jsx";', 'import App from "../karuruma-health-post.jsx";\nimport LocationBridge from "./LocationBridge";')
+          s=s.replace('if (session && mode !== "reset") return <App />;', 'if (session && mode !== "reset") return <><App /><LocationBridge /></>;')
+          p.write_text(s)
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/AuthGate.jsx
+          git diff --cached --quiet && exit 0
+          git commit -m "Connect cascading Rwanda location selector to patient form"
+          git push
