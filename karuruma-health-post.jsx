@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { supabase } from "./src/supabase";
 import {
   LayoutDashboard, Users, UserPlus, Search, Stethoscope, Wallet, Smartphone,
   FileBarChart, Lock, ClipboardList, Settings, LogOut, Menu, X, Globe,
@@ -12,7 +13,8 @@ import {
   CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell
 } from "recharts";
 
-/* ======================================================================
+/* LEGACY_DEMO_AUTH_REMOVED
+   ======================================================================
    KARURUMA HEALTH POST — Health Post Management System
    Single-file production build. Data persists via window.storage
    (shared = organization-wide clinic data, personal = per-device prefs).
@@ -174,15 +176,7 @@ const K = {
 /* ---------------------------- seed data ---------------------------- */
 async function ensureSeed() {
   let users = await getColl(K.users, null);
-  if (!users) {
-    users = [
-      { id: uid("U"), username: "admin", name: "Uwase Grace (Admin)", role: "admin",
-        passwordHash: await sha256("Admin@123"), active: true, createdAt: new Date().toISOString() },
-      { id: uid("U"), username: "staff", name: "Mugisha Eric (Staff)", role: "staff",
-        passwordHash: await sha256("Staff@123"), active: true, createdAt: new Date().toISOString() },
-    ];
-    await setColl(K.users, users);
-  }
+  if (!users) { users = []; await setColl(K.users, users); }
 
   let services = await getColl(K.services, null);
   if (!services) {
@@ -474,30 +468,8 @@ export default function App() {
     try { await window.storage.set("khp:lang", l, false); } catch {}
   }
 
-  async function doLogin(username, password) {
-    try {
-      let liveUsers = users;
-      if (!liveUsers || liveUsers.length === 0) {
-        // defensive re-fetch in case initial load raced with seeding
-        liveUsers = await getColl(K.users, []);
-        if (liveUsers.length) setUsers(liveUsers);
-      }
-      const found = liveUsers.find((u) => u.username.toLowerCase() === username.trim().toLowerCase());
-      if (!found) return { ok: false, error: t("login.invalid") };
-      if (!found.active) return { ok: false, error: t("login.inactive") };
-      const hash = await sha256(password);
-      if (hash !== found.passwordHash) return { ok: false, error: t("login.invalid") };
-      setSession(found);
-      try { await window.storage.set("khp:session", found.id, false); } catch (e) { console.error("session persist failed", e); }
-      setRoute("dashboard");
-      try { await logAction("Login", found.username, "User signed in"); } catch (e) { console.error("audit log failed", e); }
-      return { ok: true };
-    } catch (e) {
-      console.error("Login failed:", e);
-      return { ok: false, error: `Login error: ${e?.message || e}` };
-    }
-  }
   async function doLogout(auto) {
+    await supabase.auth.signOut();
     if (session) await logAction("Logout", session.username, auto ? "Auto logout (inactivity)" : "User signed out");
     setSession(null);
     try { await window.storage.set("khp:session", "", false); } catch {}
@@ -517,10 +489,6 @@ export default function App() {
         </div>
       </div>
     );
-  }
-
-  if (!session) {
-    return <LoginScreen t={t} lang={lang} changeLang={changeLang} onLogin={doLogin} notify={notify} toast={toast} />;
   }
 
   const ctx = {
@@ -567,73 +535,7 @@ export default function App() {
   );
 }
 
-/* ============================== LOGIN ============================== */
-function LoginScreen({ t, lang, changeLang, onLogin, notify }) {
-  const [username, setUsername] = useState(""); const [password, setPassword] = useState("");
-  const [show, setShow] = useState(false); const [loading, setLoading] = useState(false); const [err, setErr] = useState("");
-
-  async function submit() {
-    if (loading) return;
-    if (!username.trim() || !password) { setErr("Enter both username and password."); return; }
-    setErr(""); setLoading(true);
-    try {
-      const r = await onLogin(username, password);
-      if (!r.ok) setErr(r.error);
-    } catch (e) {
-      console.error("Unexpected login error:", e);
-      setErr(`Unexpected error: ${e?.message || e}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-  function onKeyDownField(e) {
-    if (e.key === "Enter") { e.preventDefault(); submit(); }
-  }
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-800 via-teal-700 to-emerald-700 flex items-center justify-center p-4"
-      style={{ fontFamily: "'Manrope', system-ui, sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');`}</style>
-      <div className="absolute top-4 right-4">
-        <LangSwitch lang={lang} changeLang={changeLang} light />
-      </div>
-      <div className="w-full max-w-md">
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center mx-auto mb-3 border border-white/20">
-            <Stethoscope className="text-white" size={30} />
-          </div>
-          <h1 className="text-white text-2xl font-extrabold tracking-tight">{t("brand")}</h1>
-          <p className="text-teal-100 text-sm mt-1">{t("tagline")}</p>
-        </div>
-        <Card className="p-7">
-          <h2 className="text-lg font-bold text-slate-800">{t("login.title")}</h2>
-          <p className="text-sm text-slate-500 mb-5">{t("login.subtitle")}</p>
-          {err && <div className="mb-4 flex items-center gap-2 text-sm bg-rose-50 text-rose-700 px-3 py-2.5 rounded-xl"><AlertTriangle size={16} />{err}</div>}
-          <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
-            <Field label={t("login.username")} required>
-              <input className={inputCls} value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={onKeyDownField} autoFocus required />
-            </Field>
-            <Field label={t("login.password")} required>
-              <div className="relative">
-                <input type={show ? "text" : "password"} className={inputCls + " pr-10"} value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={onKeyDownField} required />
-                <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700" title={show ? t("login.hide") : t("login.show")}>
-                  {show ? <EyeOff size={17} /> : <Eye size={17} />}
-                </button>
-              </div>
-            </Field>
-            <Btn type="button" onClick={submit} disabled={loading} className="w-full justify-center mt-2">
-              {loading ? t("login.signingIn") : t("login.signIn")}
-            </Btn>
-          </form>
-          <div className="mt-5 pt-4 border-t border-slate-100 text-xs text-slate-400">
-            <p className="font-semibold text-slate-500 mb-1">{t("login.demoNote")}:</p>
-            <p>admin / Admin@123 · staff / Staff@123</p>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
+/* ============================== LANGUAGE ============================== */
 function LangSwitch({ lang, changeLang, light }) {
   return (
     <div className={`inline-flex items-center rounded-full p-1 text-xs font-bold ${light ? "bg-white/15 border border-white/25" : "bg-slate-100"}`}>
