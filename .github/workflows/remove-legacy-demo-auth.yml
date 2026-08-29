@@ -1,0 +1,77 @@
+name: Remove legacy demo authentication
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Remove legacy demo login from the production app
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('karuruma-health-post.jsx')
+          s = p.read_text()
+
+          if 'LEGACY_DEMO_AUTH_REMOVED' in s:
+              raise SystemExit(0)
+
+          s = s.replace(
+              'import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";\n',
+              'import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";\nimport { supabase } from "./src/supabase";\n'
+          )
+
+          s, n = re.subn(
+              r'let users = await getColl\(K\.users, null\);\n  if \(!users\) \{.*?\n  \}\n\n  let services',
+              'let users = await getColl(K.users, null);\n  if (!users) { users = []; await setColl(K.users, users); }\n\n  let services',
+              s, count=1, flags=re.S
+          )
+          if n != 1:
+              raise SystemExit('Could not locate legacy demo user seed block')
+
+          s, n = re.subn(
+              r'\n  async function doLogin\(username, password\) \{.*?\n  async function doLogout\(auto\) \{',
+              '\n  async function doLogout(auto) {\n    await supabase.auth.signOut();',
+              s, count=1, flags=re.S
+          )
+          if n != 1:
+              raise SystemExit('Could not locate legacy local login block')
+
+          s = s.replace('  if (!session) {\n    return <LoginScreen t={t} lang={lang} changeLang={changeLang} onLogin={doLogin} notify={notify} toast={toast} />;\n  }\n\n', '')
+
+          s, n = re.subn(
+              r'\n/\* ============================== LOGIN ============================== \*/\nfunction LoginScreen\(.*?\nfunction LangSwitch',
+              '\n/* ============================== LANGUAGE ============================== */\nfunction LangSwitch',
+              s, count=1, flags=re.S
+          )
+          if n != 1:
+              raise SystemExit('Could not locate legacy LoginScreen component')
+
+          s = s.replace('/* ======================================================================\n   KARURUMA HEALTH POST — Health Post Management System', '/* LEGACY_DEMO_AUTH_REMOVED\n   ======================================================================\n   KARURUMA HEALTH POST — Health Post Management System', 1)
+          p.write_text(s)
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add karuruma-health-post.jsx
+          git diff --cached --quiet && exit 0
+          git commit -m "Remove legacy demo login from health post"
+          git push
+
+      - name: Remove this one-time workflow
+        if: success()
+        run: |
+          git rm .github/workflows/remove-legacy-demo-auth.yml || true
+          git commit -m "Remove one-time demo auth cleanup workflow" || true
+          git push || true
