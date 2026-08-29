@@ -1,0 +1,37 @@
+name: Fix Supabase persistence
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace local storage persistence with Supabase
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('karuruma-health-post.jsx')
+          s=p.read_text()
+          old='''async function getColl(key, fallback=[]) {\n  try { const raw = await window.storage?.get(key, true); return raw?.value ? JSON.parse(raw.value) : fallback; } catch { return fallback; }\n}\nasync function setColl(key, value) {\n  try { await window.storage?.set(key, JSON.stringify(value), true); return true; } catch { return false; }\n}'''
+          new='''const SUPABASE_TABLES = {\n  khp_patients: "patients", khp_visits: "visits", khp_transactions: "transactions",\n  khp_services: "services", khp_closings: "closings", khp_users: "users", khp_audit: "audit_logs"\n};\nconst SUPABASE_COLUMNS = {\n  patients: ["id","patient_id","name","dob","sex","phone","address","emergency_contact","notes","registered_at","registered_by","archived"],\n  visits: ["id","visit_id","patient_id","date","reason","service_id","staff_id","amount","payment_method","status","notes"],\n  transactions: ["id","txn_id","date","time","patient_id","visit_id","service_id","amount","method","staff_id","description","status"],\n  services: ["id","name","description","price","active"],\n  closings: ["id","date","closed_by","closed_at","patients_count","visits_count","txn_count","cash_total","momo_total","total_revenue"],\n  users: ["id","username","name","role","password_hash","active","created_at","email","auth_user_id"],\n  audit_logs: ["id","user_id","username","action","target","description","timestamp"]\n};\nfunction toSnake(k) { return k.replace(/[A-Z]/g, m => "_" + m.toLowerCase()); }\nfunction fromSnake(k) { return k.replace(/_([a-z])/g, (_,c) => c.toUpperCase()); }\nasync function getColl(key, fallback=[]) {\n  const table = SUPABASE_TABLES[key];\n  if (!table || !supabase) return fallback;\n  try {\n    const { data, error } = await supabase.from(table).select("*").order("id", { ascending: true });\n    if (error) throw error;\n    return (data || []).map(row => Object.fromEntries(Object.entries(row).map(([k,v]) => [fromSnake(k), v])));\n  } catch (e) { console.error("Supabase read failed", table, e); return fallback; }\n}\nasync function setColl(key, value) {\n  const table = SUPABASE_TABLES[key];\n  if (!table || !supabase) return false;\n  try {\n    const rows = (Array.isArray(value) ? value : []).map(item => {\n      const allowed = SUPABASE_COLUMNS[table] || [];\n      return Object.fromEntries(Object.entries(item).map(([k,v]) => [toSnake(k), v]).filter(([k]) => allowed.includes(k)));\n    });\n    const ids = rows.map(r => r.id).filter(Boolean);\n    const existing = await supabase.from(table).select("id");\n    if (existing.error) throw existing.error;\n    const stale = (existing.data || []).map(r => r.id).filter(id => !ids.includes(id));\n    if (stale.length) { const { error } = await supabase.from(table).delete().in("id", stale); if (error) throw error; }\n    if (rows.length) { const { error } = await supabase.from(table).upsert(rows, { onConflict: "id" }); if (error) throw error; }\n    return true;\n  } catch (e) { console.error("Supabase write failed", table, e); return false; }\n}'''
+          if old not in s:
+              raise SystemExit('storage block not found')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+      - name: Commit persistence fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add karuruma-health-post.jsx
+          git diff --cached --quiet || git commit -m "Use Supabase for all application records"
+          git push
+      - name: Remove one-time workflow
+        if: success()
+        run: |
+          git rm .github/workflows/fix-supabase-persistence.yml || true
+          git commit -m "Remove one-time persistence fix workflow" || true
+          git push || true
