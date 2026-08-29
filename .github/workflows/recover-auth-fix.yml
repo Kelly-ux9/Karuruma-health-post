@@ -1,0 +1,55 @@
+name: Recover authentication fix and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-recovery
+  cancel-in-progress: true
+
+jobs:
+  recover-and-deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Trigger deployment with Supabase-only authentication fix'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore complete demo-free application
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git revert --no-edit b15d524633d92c4f87b07544457181ebdc193a68
+          git push origin HEAD:main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build restored application
+        run: npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload restored artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+      - name: Deploy restored application
+        uses: actions/deploy-pages@v4
