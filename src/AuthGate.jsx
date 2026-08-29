@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import App from "../karuruma-health-post.jsx";
+import LocationBridge from "./LocationBridge";
 import { supabase } from "./supabase";
 
 const input = "w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white";
@@ -97,7 +98,7 @@ export default function AuthGate() {
   }
 
   if (checking) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-teal-700">Loading Karuruma Health Post…</div>;
-  if (session && mode !== "reset") return <App />;
+  if (session && mode !== "reset") return <><App /><LocationBridge /></>;
 
   return <div className="min-h-screen bg-gradient-to-br from-teal-800 via-teal-700 to-emerald-700 flex items-center justify-center p-4" style={{ fontFamily: "system-ui, sans-serif" }}>
     <div className="w-full max-w-md">
