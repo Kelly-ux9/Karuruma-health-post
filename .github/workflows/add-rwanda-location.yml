@@ -1,0 +1,57 @@
+name: Add cascading Rwanda patient location
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch patient registration form
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('karuruma-health-post.jsx')
+          s = p.read_text()
+
+          if 'RwandaLocationSelect' not in s:
+              s = s.replace('import { supabase } from "./src/supabase";\n', 'import { supabase } from "./src/supabase";\nimport RwandaLocationSelect from "./src/RwandaLocationSelect";\n', 1)
+
+          en_old = 'male: "Male", female: "Female", address: "Address / Location", emergency:'
+          en_new = 'male: "Male", female: "Female", province: "Province", district: "District", sector: "Sector", cell: "Cell", village: "Village", selectProvince: "Select province…", selectDistrict: "Select district…", selectSector: "Select sector…", selectCell: "Select cell…", selectVillage: "Select village…", address: "Address / Location", emergency:'
+          s = s.replace(en_old, en_new, 1)
+
+          rw_old = 'male: "Gabo", female: "Gore", address: "Aho atuye", emergency:'
+          rw_new = 'male: "Gabo", female: "Gore", province: "Intara", district: "Akarere", sector: "Umurenge", cell: "Akagari", village: "Umudugudu", selectProvince: "Hitamo intara…", selectDistrict: "Hitamo akarere…", selectSector: "Hitamo umurenge…", selectCell: "Hitamo akagari…", selectVillage: "Hitamo umudugudu…", address: "Aho atuye", emergency:'
+          s = s.replace(rw_old, rw_new, 1)
+
+          new_modal = '''function PatientModal({t,initial,onClose,onSave}) {\n  const [p,setP]=useState(initial||{id:uid("PAT"),name:"",dob:"",sex:"",phone:"",address:"",provinceCode:"",provinceName:"",districtCode:"",districtName:"",sectorCode:"",sectorName:"",cellCode:"",cellName:"",villageCode:"",villageName:"",emergency:"",notes:"",createdAt:nowISO()});\n  const set=(k,v)=>setP(x=>({...x,[k]:v}));\n  const setLocation=(loc)=>setP(x=>({...x,...loc,address:[loc.provinceName,loc.districtName,loc.sectorName,loc.cellName,loc.villageName].filter(Boolean).join(", ")}));\n  return <Modal title={initial?t("patients.profile"):t("patients.register")} onClose={onClose}>\n    <div className="grid md:grid-cols-2 gap-3">\n      <Field label={t("patients.fullName")} required><Input value={p.name} onChange={v=>set("name",v)}/></Field>\n      <Field label={t("patients.dob")}><Input type="date" value={p.dob} onChange={v=>set("dob",v)}/></Field>\n      <Field label={t("patients.sex")}><Select value={p.sex} onChange={v=>set("sex",v)}><option value="">—</option><option value="Male">{t("patients.male")}</option><option value="Female">{t("patients.female")}</option></Select></Field>\n      <Field label={t("common.phone")}><Input value={p.phone} onChange={v=>set("phone",v)}/></Field>\n      <RwandaLocationSelect value={p} onChange={setLocation} t={t}/>\n      <Field label={t("patients.emergency")}><Input value={p.emergency} onChange={v=>set("emergency",v)}/></Field>\n    </div>\n    {p.address && <div className="mt-3 rounded-xl bg-teal-50 border border-teal-100 px-4 py-3 text-sm"><div className="font-semibold text-teal-800">{t("patients.address")}</div><div className="text-teal-700 mt-1">{p.address}</div></div>}\n    <Field label={t("patients.notes")}><textarea value={p.notes} onChange={e=>set("notes",e.target.value)} className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm"/></Field>\n    <div className="flex justify-end gap-2"><Btn variant="secondary" onClick={onClose}>{t("common.cancel")}</Btn><Btn disabled={!p.name.trim()||!p.villageCode} onClick={()=>onSave(p)}>{t("common.save")}</Btn></div>\n  </Modal>;\n}\n\n'''
+          s, n = re.subn(r'function PatientModal\(\{t,initial,onClose,onSave\}\) \{.*?\n\nfunction Visits', new_modal + 'function Visits', s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('PatientModal function not found; refusing to make partial change')
+
+          p.write_text(s)
+      - name: Install and build
+        run: npm install --package-lock=false && npm run build
+      - name: Commit patched app
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add karuruma-health-post.jsx
+          git diff --cached --quiet && exit 0
+          git commit -m "Add cascading Rwanda patient location fields"
+          git push
+      - name: Remove one-time workflow
+        if: success()
+        run: |
+          git rm .github/workflows/add-rwanda-location.yml || true
+          git commit -m "Remove one-time Rwanda location workflow" || true
+          git push || true
