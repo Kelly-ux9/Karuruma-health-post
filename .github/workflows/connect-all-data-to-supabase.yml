@@ -1,41 +1,10 @@
-name: Connect all application data to Supabase
+name: Obsolete Supabase Rewrite (Disabled)
 
 on:
-  push:
-    branches: [main]
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 jobs:
-  connect-data:
-    if: github.actor != 'github-actions[bot]'
+  disabled:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Replace browser-only storage with Supabase persistence
-        shell: python
-        run: |
-          from pathlib import Path
-          import re
-          p=Path('karuruma-health-post.jsx')
-          s=p.read_text()
-          if 'SUPABASE_SHARED_STORAGE_V2' in s: raise SystemExit(0)
-          old=re.search(r'async function getColl\(key, fallback=\[\]\) \{.*?\n\}\nasync function setColl\(key, value\) \{.*?\n\}', s, re.S)
-          if not old: raise SystemExit('storage functions not found')
-          new=r'''/* SUPABASE_SHARED_STORAGE_V2: shared clinic records */
-const TABLES={ [K.patients]:"patients", [K.visits]:"visits", [K.transactions]:"transactions", [K.services]:"services", [K.closings]:"closings", [K.users]:"users", [K.audit]:"audit_logs" };
-const camelizeRow=r=>({...r,patientId:r.patient_id??r.patientId,visitId:r.visit_id??r.visitId,serviceId:r.service_id??r.serviceId,staffId:r.staff_id??r.staffId,createdAt:r.created_at??r.createdAt,registeredAt:r.registered_at??r.registeredAt,registeredBy:r.registered_by??r.registeredBy,emergency:r.emergency_contact??r.emergency,passwordHash:r.password_hash??r.passwordHash,authUserId:r.auth_user_id??r.authUserId,closedBy:r.closed_by??r.closedBy,closedAt:r.closed_at??r.closedAt,patientsCount:r.patients_count??r.patientsCount,visitsCount:r.visits_count??r.visitsCount,txnCount:r.txn_count??r.txnCount,cashTotal:r.cash_total??r.cashTotal,momoTotal:r.momo_total??r.momoTotal,totalRevenue:r.total_revenue??r.totalRevenue,paymentMethod:r.payment_method??r.paymentMethod});
-const dbRow=(table,r)=>{const x={...r};const rename=(a,b)=>{if(x[a]!==undefined){x[b]=x[a];delete x[a]}};rename('patientId','patient_id');rename('visitId','visit_id');rename('serviceId','service_id');rename('staffId','staff_id');rename('createdAt','created_at');rename('registeredAt','registered_at');rename('registeredBy','registered_by');rename('emergency','emergency_contact');rename('passwordHash','password_hash');rename('authUserId','auth_user_id');rename('closedBy','closed_by');rename('closedAt','closed_at');rename('patientsCount','patients_count');rename('visitsCount','visits_count');rename('txnCount','txn_count');rename('cashTotal','cash_total');rename('momoTotal','momo_total');rename('totalRevenue','total_revenue');rename('paymentMethod','payment_method');if(table==='patients'){if(x.archived===undefined)x.archived=false;if(x.registered_at===undefined)x.registered_at=x.created_at||new Date().toISOString()}if(table==='transactions'){if(x.status===undefined)x.status='completed';if(x.time===undefined)x.time=x.created_at||new Date().toISOString()}return x};
-async function getColl(key,fallback=[]){const table=TABLES[key];if(!table)return fallback;try{const {data,error}=await supabase.from(table).select('*');if(error)throw error;return(data||[]).map(camelizeRow)}catch(e){console.error('Supabase load failed',table,e);return fallback}}
-async function setColl(key,value){const table=TABLES[key];if(!table)return false;try{const rows=(Array.isArray(value)?value:[value]).map(r=>dbRow(table,r));if(rows.length){const {error}=await supabase.from(table).upsert(rows,{onConflict:'id'});if(error)throw error}return true}catch(e){console.error('Supabase save failed',table,e);return false}}'''
-          s=s[:old.start()]+new+s[old.end():]
-          p.write_text(s)
-      - name: Commit
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add karuruma-health-post.jsx
-          git diff --cached --quiet && exit 0
-          git commit -m "Persist clinic data in Supabase"
-          git push
+      - run: echo "Disabled. Persistence is maintained in the application source."
