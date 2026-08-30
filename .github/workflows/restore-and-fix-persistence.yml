@@ -1,0 +1,87 @@
+name: Restore and Fix Persistence
+
+on:
+  push:
+    paths:
+      - '.github/workflows/restore-and-fix-persistence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Restore app from known good commit
+        run: git checkout 5c6108cd756be3d8983bd4a369895552663ec70f -- karuruma-health-post.jsx
+
+      - name: Fix multi-device persistence
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('karuruma-health-post.jsx')
+          s = p.read_text()
+          old = '''async function setColl(key, value) {
+  const table = SUPABASE_TABLES[key];
+  if (!table || !supabase) return false;
+  try {
+    const rows = (Array.isArray(value) ? value : []).map(item => {
+      const allowed = SUPABASE_COLUMNS[table] || [];
+      return Object.fromEntries(Object.entries(item).map(([k,v]) => [toSnake(k), v]).filter(([k]) => allowed.includes(k)));
+    });
+    const ids = rows.map(r => r.id).filter(Boolean);
+    const existing = await supabase.from(table).select("id");
+    if (existing.error) throw existing.error;
+    const stale = (existing.data || []).map(r => r.id).filter(id => !ids.includes(id));
+    if (stale.length) { const { error } = await supabase.from(table).delete().in("id", stale); if (error) throw error; }
+    if (rows.length) { const { error } = await supabase.from(table).upsert(rows, { onConflict: "id" }); if (error) throw error; }
+    return true;
+  } catch (e) { console.error("Supabase write failed", table, e); return false; }
+}'''
+          new = '''async function setColl(key, value) {
+  const table = SUPABASE_TABLES[key];
+  if (!table || !supabase) throw new Error(`Supabase table is not configured: ${key}`);
+  const rows = (Array.isArray(value) ? value : []).map(item => {
+    const allowed = SUPABASE_COLUMNS[table] || [];
+    return Object.fromEntries(Object.entries(item).map(([k,v]) => [toSnake(k), v]).filter(([k]) => allowed.includes(k)));
+  });
+  if (!rows.length) return true;
+  const { error } = await supabase.from(table).upsert(rows, { onConflict: "id" });
+  if (error) {
+    console.error("Supabase write failed", table, error);
+    throw error;
+  }
+  return true;
+}'''
+          if old not in s:
+              raise SystemExit('Expected setColl block was not found')
+          s = s.replace(old, new)
+          old2 = '''async function saveAnd(key,value,setter){await setColl(key,value);setter(value);}'''
+          new2 = '''async function saveAnd(key,value,setter){
+    try {
+      await setColl(key,value);
+      setter(value);
+    } catch (e) {
+      console.error("Save failed", key, e);
+      notify("Could not save to the database. Please try again.", "error");
+      throw e;
+    }
+  }'''
+          if old2 not in s:
+              raise SystemExit('Expected saveAnd block was not found')
+          s = s.replace(old2, new2)
+          p.write_text(s)
+
+      - name: Commit fixed app
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add karuruma-health-post.jsx
+          git commit -m 'Fix permanent multi-device persistence' || exit 0
+          git push origin HEAD:main
