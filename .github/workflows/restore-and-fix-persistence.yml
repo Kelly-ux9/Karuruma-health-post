@@ -1,4 +1,4 @@
-name: Restore and Fix Persistence
+name: Restore Known Good App
 
 on:
   push:
@@ -18,55 +18,19 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      - name: Restore known-good application source
+      - name: Restore application source
         run: git checkout 5c6108cd756be3d8983bd4a369895552663ec70f -- karuruma-health-post.jsx
 
-      - name: Fix multi-device persistence
-        shell: python
+      - name: Verify application source
         run: |
-          from pathlib import Path
-          p = Path('karuruma-health-post.jsx')
-          s = p.read_text()
-          old = '''async function setColl(key, value) {
-  const table = SUPABASE_TABLES[key];
-  if (!table || !supabase) return false;
-  try {
-    const rows = (Array.isArray(value) ? value : []).map(item => {
-      const allowed = SUPABASE_COLUMNS[table] || [];
-      return Object.fromEntries(Object.entries(item).map(([k,v]) => [toSnake(k), v]).filter(([k]) => allowed.includes(k)));
-    });
-    const ids = rows.map(r => r.id).filter(Boolean);
-    const existing = await supabase.from(table).select("id");
-    if (existing.error) throw existing.error;
-    const stale = (existing.data || []).map(r => r.id).filter(id => !ids.includes(id));
-    if (stale.length) { const { error } = await supabase.from(table).delete().in("id", stale); if (error) throw error; }
-    if (rows.length) { const { error } = await supabase.from(table).upsert(rows, { onConflict: "id" }); if (error) throw error; }
-    return true;
-  } catch (e) { console.error("Supabase write failed", table, e); return false; }
-}'''
-          new = '''async function setColl(key, value) {
-  const table = SUPABASE_TABLES[key];
-  if (!table || !supabase) throw new Error(`Supabase table is not configured: ${key}`);
-  const rows = (Array.isArray(value) ? value : []).map(item => {
-    const allowed = SUPABASE_COLUMNS[table] || [];
-    return Object.fromEntries(Object.entries(item).map(([k,v]) => [toSnake(k), v]).filter(([k]) => allowed.includes(k)));
-  });
-  if (!rows.length) return true;
-  const { error } = await supabase.from(table).upsert(rows, { onConflict: "id" });
-  if (error) {
-    console.error("Supabase write failed", table, error);
-    throw error;
-  }
-  return true;
-}'''
-          if old not in s:
-              raise SystemExit('Expected persistence block was not found')
-          p.write_text(s.replace(old, new))
+          test -s karuruma-health-post.jsx
+          grep -q 'export default function KarurumaHealthPost' karuruma-health-post.jsx
+          wc -c karuruma-health-post.jsx
 
-      - name: Commit restored and fixed source
+      - name: Commit restored source
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add karuruma-health-post.jsx
-          git commit -m 'Restore application and fix permanent persistence' || exit 0
+          git commit -m 'Restore working application source' || exit 0
           git push origin HEAD:main
