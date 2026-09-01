@@ -3,6 +3,7 @@ import App from "../karuruma-health-post.jsx";
 import LocationBridge from "./LocationBridge";
 import { supabase } from "./supabase";
 
+// Authentication gate: admin registration is controlled by the Supabase users profile.
 const input = "w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white";
 
 export default function AuthGate() {
