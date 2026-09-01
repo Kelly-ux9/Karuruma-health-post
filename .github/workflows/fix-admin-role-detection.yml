@@ -1,0 +1,38 @@
+name: Fix Admin Role Detection
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fix role lookup
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('karuruma-health-post.jsx')
+          s = p.read_text()
+          old = 'supabase.from("users").select("role, username, name, active").eq("id",user.id).maybeSingle()'
+          new = 'supabase.from("users").select("role, username, name, active").eq("auth_user_id",user.id).maybeSingle()'
+          if old not in s:
+              raise SystemExit('Expected role lookup was not found; no changes made.')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Commit fix and remove one-time workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add karuruma-health-post.jsx
+          git rm .github/workflows/fix-admin-role-detection.yml
+          git commit -m 'Fix admin role detection'
+          git push
