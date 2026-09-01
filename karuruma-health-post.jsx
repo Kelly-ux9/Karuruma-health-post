@@ -215,7 +215,7 @@ export default function KarurumaHealthPost() {
   const [lang,setLang]=useState("en"); const t=useT(lang); const [page,setPage]=useState("dashboard"); const [open,setOpen]=useState(false); const [toast,setToast]=useState(null); const [role,setRole]=useState("staff"); const [currentUser,setCurrentUser]=useState(null);
   const notify=useCallback((msg,type="ok")=>{setToast({msg,type});setTimeout(()=>setToast(null),2600)},[]);
   useEffect(()=>{seedData();},[]);
-  useEffect(()=>{ (async()=>{ const {data:{user}}=await supabase.auth.getUser(); if(user){setCurrentUser(user); const {data}=await supabase.from("users").select("role, username, name, active").eq("id",user.id).maybeSingle(); if(data){setRole(data.role||"staff"); if(data.active===false){await supabase.auth.signOut();}}} })(); },[]);
+  useEffect(()=>{ (async()=>{ const {data:{user}}=await supabase.auth.getUser(); if(user){setCurrentUser(user); const {data}=await supabase.from("users").select("role, username, name, active").eq("auth_user_id",user.id).maybeSingle(); if(data){setRole(data.role||"staff"); if(data.active===false){await supabase.auth.signOut();}}} })(); },[]);
   async function doLogout(auto=false){ await supabase.auth.signOut(); if(!auto) notify("Signed out"); }
 
   const [patients,setPatients]=useState([]); const [visits,setVisits]=useState([]); const [transactions,setTransactions]=useState([]); const [services,setServices]=useState([]); const [closings,setClosings]=useState([]); const [users,setUsers]=useState([]); const [audit,setAudit]=useState([]);
